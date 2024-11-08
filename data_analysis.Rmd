@@ -1,0 +1,57 @@
+---
+title: "Data analysis"
+author: "Dani"
+date: "2024-11-08"
+output: html_document
+---
+
+```{r packages warning = F}
+library("measurements")
+library("tidyverse")
+library("ggpubr")
+library("rstatix")
+library("dplyr")
+library("PairedData")
+library("lme4")
+library("sjPlot")
+library("glmmTMB")
+library("ggeffects")
+library("gridExtra")
+library("grid")
+library("lattice")
+library("car")
+library("MuMIn")
+library("lmerTest")
+library("pbkrtest")
+library("ggthemes")
+library("effects")
+library("multcomp")
+library("lsmeans")
+library("viridis")
+library("MASS")
+```
+
+```{r inport data}
+setwd("C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison") #set working directory
+cor_dat <- read.csv("corallivory_all_data.csv")
+str(cor_dat)
+```
+
+```{r inport data}
+setwd("C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison") #set working directory
+cor_dat <- read.csv("corallivory_all_data.csv")
+# str(cor_dat)
+# head(cor_dat)
+```
+
+```{r data clean up}
+#SUMMARY: format data frame columns
+
+cols_fac <- as.vector(colnames(cor_dat)[c(1:5, 7:10, 12, 13)]) #select columns that are factors
+cor_dat[cols_fac] <- lapply(cor_dat[cols_fac], factor) #turn those columns into factors
+cols_num <- as.vector(colnames(cor_dat)[c(6, 11, 14:42)]) #select columns that are numeric
+cor_dat[cols_num] <- lapply(cor_dat[cols_num], as.numeric) #turn those columns into numeric
+
+cor_dat <- cor_dat[,-c(43)] #remove extra random columns
+str(cor_dat)
+```
