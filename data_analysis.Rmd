@@ -5,7 +5,7 @@ date: "2024-11-08"
 output: html_document
 ---
 
-```{r packages warning = F}
+```{r packages, warning = F}
 library("measurements")
 library("tidyverse")
 library("ggpubr")
@@ -29,12 +29,7 @@ library("multcomp")
 library("lsmeans")
 library("viridis")
 library("MASS")
-```
-
-```{r inport data}
-setwd("C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison") #set working directory
-cor_dat <- read.csv("corallivory_all_data.csv")
-str(cor_dat)
+library("ggpubr")
 ```
 
 ```{r inport data}
@@ -54,4 +49,1671 @@ cor_dat[cols_num] <- lapply(cor_dat[cols_num], as.numeric) #turn those columns i
 
 cor_dat <- cor_dat[,-c(43)] #remove extra random columns
 str(cor_dat)
+```
+
+```{r depths}
+# SUMMARY: taking the mean, sd, min, and max depth for each site by using the GCP depths in each transect
+
+# 1) subset insitu data so it only shows up once
+insitu <- subset(cor_dat, METHOD == "INSITU") #extract insitu data
+
+# 2) extract the depth for each transect
+transects <- as.vector(unique(insitu$TRANSECT)) #create a vector of the transect names
+depths <- c() #empty vector to store data
+
+for(i in 1:length(transects)){
+  rows <- which(insitu$TRANSECT == transects[i]) #what rows have data for the transect
+  row <- rows[1] #select only the first row
+  depth <- insitu[row, 14]
+  depths <- c(depths, depth)
+}
+# depths
+
+sites <- c(rep("HAL", 2), rep("HAN", 4), rep("KAH", 4), rep("KAN", 6), rep("KEW", 5), rep("LAN", 4), rep("MAK", 4), rep("MOK", 2), rep("PUP", 4), rep("WAI", 4)) #make a vector with site names following transect names
+
+transect_depths <- cbind(sites,transects, depths) #bind everything together
+transect_depths <- as.data.frame(transect_depths) #turn into a data frame
+transect_depths$sites <- as.factor(transect_depths$sites) #turn to factor
+transect_depths$transects <- as.factor(transect_depths$transects) #turn to factor
+transect_depths$depths <- as.numeric(transect_depths$depths) #turn to number
+transect_depths$depths <- conv_unit(transect_depths$depths, "ft", "m")
+# str(transect_depths)
+
+# 3) take mean, sd, min and max depth for each depth using transect data
+# 4) for se - take sd of the transects and divide by the square root of the number of transects per site
+mean_depth <- tapply(transect_depths$depths, transect_depths$sites, mean) #calculate mean depth for each site
+sd_depth <- tapply(transect_depths$depths, transect_depths$sites, sd) #calculate sd depth for each site
+min_depth <- tapply(transect_depths$depths, transect_depths$sites, min) #calculate min depth for each site
+max_depth <- tapply(transect_depths$depths, transect_depths$sites, max) #calculate max depth for each site
+n <- c(2, 4, 4, 6, 5, 4, 4, 2, 4, 4) #vector with # of transects per site
+se_depth <- sd_depth/sqrt(n)
+
+# mean(mean_depth)
+# sd(mean_depth)/sqrt(39)
+
+depth_summary_table <- cbind(mean_depth, n, sd_depth, se_depth, min_depth, max_depth)
+depth_summary_table
+```
+
+```{r hard coral cover}
+#SUMMARY:  taking the mean, sd, min, and max harc doral cover for each site by first taking the mean of the quadrats along each transect and then taking the mean of the transects at each site
+
+# 1) extract hard coral cover data for each T_Q (along with the corresponding transect and site name)
+T_Q <- as.vector(unique(insitu$T_Q))
+coral_cover <- c() #empty vector to store coral cover data
+transects_n <- c() #empty vector to store transect names
+site_n <- c() #empty vector to store site names
+
+for(i in 1:length(T_Q)){
+  rows <- which(insitu$T_Q == T_Q[i]) #what rows have data for the transect
+  row <- rows[1] #select only the first row
+  coral <- insitu[row, 40] #extract hard coral cover for that transect
+  transect_name <- as.character(insitu[row, 2]) #extract transect number for that hard coral cover recording
+  site_name <- as.character(insitu[row, 1]) #extract site name for that hard coral cover recording
+  coral_cover <- c(coral_cover, coral) #add new coral cover values to vector
+  transects_n <- c(transects_n, transect_name) # add new transect names to vector
+  site_n <- c(site_n, site_name) #add new site names to vector
+}
+# transects_n
+# coral_cover
+# site_n
+hard_coral_cover_data <- as.data.frame(cbind(site_n, transects_n, T_Q, coral_cover)) #combine sit ename, transect name, T_Q and coral cover
+hard_coral_cover_data$site_n <- as.factor(hard_coral_cover_data$site_n) #turn to factor
+hard_coral_cover_data$transects_n <- as.factor(hard_coral_cover_data$transects_n) #turn to factor
+hard_coral_cover_data$T_Q <- as.factor(hard_coral_cover_data$T_Q) #turn to factor
+hard_coral_cover_data$coral_cover <- as.numeric(hard_coral_cover_data$coral_cover) #turn to number
+# str(hard_coral_cover_data)
+# hard_coral_cover_data
+
+# 2) take the mean of the hard coral cover for each transect using the quadrat data
+#take the mean, sd, min and max of hard coral cover for each transect (by using quadrat data)
+transect_HC_means <- round(tapply(hard_coral_cover_data$coral_cover, hard_coral_cover_data$transects_n, mean),4) * 100
+
+#bind transect level data together, turn to data frame and format each column
+transect_HC_data <- as.data.frame(cbind(sites, transect_HC_means))
+transect_HC_data$sites <- as.factor(transect_HC_data$sites)
+transect_HC_data$transect_HC_means <- as.numeric(transect_HC_data$transect_HC_means)
+# transect_HC_data
+# str(transect_HC_data)
+
+# 3) take the mean, min and max of the hard coral cover for each site using the transect data from step 2
+# 4) take the SD of the transect means (from step 2) and for SE divide SD by square root of # of transects per site
+#take the mean of the transects for each site, get the min and max of the transect means, calculate sd and se
+site_HC_means <- tapply(transect_HC_data$transect_HC_means, transect_HC_data$sites, mean) #get site mean by taking transect means
+site_HC_mins <- round(tapply(transect_HC_data$transect_HC_means, transect_HC_data$sites, min), 2) #get site min by taking min of transect means
+site_HC_max <- round(tapply(transect_HC_data$transect_HC_means, transect_HC_data$sites, max), 2) #get site max by taking max of transect means
+site_HC_sd <- round(tapply(transect_HC_data$transect_HC_means, transect_HC_data$sites, sd), 2) #get site sd by taking sd of transect means
+site_HC_se <- round(site_HC_sd/sqrt(n), 2) #for SE divide the sd for each site by the square root of the number of transects at each site
+site <- as.vector(unique(insitu$SITE)) #get site names to make a table
+site_HC_data <- cbind(site, n, site_HC_means, site_HC_mins, site_HC_max, site_HC_sd, site_HC_se)
+site_HC_data <- as.data.frame(site_HC_data)
+site_HC_data
+
+# mean(site_HC_means)*100
+# sd(site_HC_means)/sqrt(39)*100
+```
+
+```{r in situ corallivory density}
+#SUMMARY:  taking the mean, sd, min, and max for in situ bite marks for each site by first summing bite marks in each quadrat, then taking the mean of the quadrats along each transect and then taking the mean of the transects at each site
+
+# 1) extract total corallivory counts for each quadrat (i.e. sum of all corallivory in each quadrat) 
+insitu_tot_cor_quad <- tapply(insitu$NUMBER_BIT, insitu$T_Q, sum) #take the sum of the number of bites for each quadrat
+
+insitu_tot_cor_quad <- cbind(site_n, transects_n, T_Q, insitu_tot_cor_quad) #bind results with site and transect names
+insitu_tot_cor_quad <- as.data.frame(insitu_tot_cor_quad)#turn to data frame
+cols_fac <- as.vector(colnames(insitu_tot_cor_quad)[c(1:3)]) #select columns that are factors
+insitu_tot_cor_quad[cols_fac] <- lapply(insitu_tot_cor_quad[cols_fac], factor) #turn those columns into factors
+cols_num <- as.vector(colnames(insitu_tot_cor_quad)[4]) #select columns that are numeric
+insitu_tot_cor_quad[cols_num] <- lapply(insitu_tot_cor_quad[cols_num], as.numeric) #turn those columns into numeric
+# insitu_tot_cor_quad
+
+# 2) take the mean of total corallivory for each transect by using the quadrat data
+insitu_tot_cor_transect <- tapply(insitu_tot_cor_quad$insitu_tot_cor_quad,
+                                  insitu_tot_cor_quad$transects_n, mean) #take the mean number of bites for each transect using the sums of the quadrat data
+
+insitu_tot_cor_transect <- cbind(sites, transects, insitu_tot_cor_transect)
+insitu_tot_cor_transect <- as.data.frame(insitu_tot_cor_transect)
+cols_fac <- as.vector(colnames(insitu_tot_cor_transect)[c(1:2)]) #select columns that are factors
+insitu_tot_cor_transect[cols_fac] <- lapply(insitu_tot_cor_transect[cols_fac], factor) #turn those columns into factors
+cols_num <- as.vector(colnames(insitu_tot_cor_transect)[3]) #select columns that are numeric
+insitu_tot_cor_transect[cols_num] <- lapply(insitu_tot_cor_transect[cols_num], as.numeric) #turn those columns into numeric
+# insitu_tot_cor_transect
+
+# 3) take the mean of total corallivory for each site using the transect data from step 2
+# 4) take the SD of the transect means total corallivory (from step 2) and for SE divide SD by square root of # of transects per site
+insitu_tot_cor_mean<- round(tapply(insitu_tot_cor_transect$insitu_tot_cor_transect,
+                             insitu_tot_cor_transect$sites, mean), 2) #calculate mean for site using transect data
+insitu_tot_cor_sd <- tapply(insitu_tot_cor_transect$insitu_tot_cor_transect,
+                            insitu_tot_cor_transect$sites, sd) #calculate sd for site using transect data
+insitu_tot_cor_se <- round(insitu_tot_cor_sd/sqrt(n),2) #calculate se by diving sd by sqrt of # of transects per site
+insitu_tot_cor_site <- cbind(site, insitu_tot_cor_mean, insitu_tot_cor_se) #combine everything
+insitu_tot_cor_site <- as.data.frame(insitu_tot_cor_site) #turn into a data frame
+insitu_tot_cor_site
+```
+
+```{r arc aggregate corallivory density}
+#SUMMARY:  taking the mean, sd, min, and max for SfM bite marks for each site by first summing bite marks in each quadrat, then taking the mean of the quadrats along each transect and then taking the mean of the transects at each site
+
+# 1) subset arc data
+arc <- subset(cor_dat, METHOD == "ARC") #extract insitu data
+
+arc <- subset(cor_dat, METHOD == "ARC")
+
+# 2) extract total corallivory counts for each quadrat (i.e. sum of all corallivory in each quadrat) 
+arc_tot_cor_quad <- tapply(arc$NUMBER_BIT, arc$T_Q, sum) #take the sum of the number of bites for each quadrat
+
+arc_tot_cor_quad <- cbind(site_n, transects_n, T_Q, arc_tot_cor_quad) #bind results with site and transect names
+arc_tot_cor_quad <- as.data.frame(arc_tot_cor_quad)#turn to data frame
+cols_fac <- as.vector(colnames(arc_tot_cor_quad)[c(1:3)]) #select columns that are factors
+arc_tot_cor_quad[cols_fac] <- lapply(arc_tot_cor_quad[cols_fac], factor) #turn those columns into factors
+cols_num <- as.vector(colnames(arc_tot_cor_quad)[4]) #select columns that are numeric
+arc_tot_cor_quad[cols_num] <- lapply(arc_tot_cor_quad[cols_num], as.numeric) #turn those columns into numeric
+# arc_tot_cor_quad
+
+# 3) take the mean of total corallivory for each transect by using the quadrat data
+arc_tot_cor_transect <- tapply(arc_tot_cor_quad$arc_tot_cor_quad,
+                                  arc_tot_cor_quad$transects_n, mean) #take the mean number of bites for each transect using the sums of the quadrat data
+
+arc_tot_cor_transect <- cbind(sites, transects, arc_tot_cor_transect)
+arc_tot_cor_transect <- as.data.frame(arc_tot_cor_transect)
+cols_fac <- as.vector(colnames(arc_tot_cor_transect)[c(1:2)]) #select columns that are factors
+arc_tot_cor_transect[cols_fac] <- lapply(arc_tot_cor_transect[cols_fac], factor) #turn those columns into factors
+cols_num <- as.vector(colnames(arc_tot_cor_transect)[3]) #select columns that are numeric
+arc_tot_cor_transect[cols_num] <- lapply(arc_tot_cor_transect[cols_num], as.numeric) #turn those columns into numeric
+# arc_tot_cor_transect
+
+# 4) take the mean of total corallivory for each site using the transect data from step 2 (i.e. take the mean of the transects)
+# 5) take the SD of the transect means total corallivory (from step 2) and for SE divide SD by square root of # of transects per site
+arc_tot_cor_mean<- round(tapply(arc_tot_cor_transect$arc_tot_cor_transect,
+                             arc_tot_cor_transect$sites, mean), 2) #calculate mean for site using transect data
+arc_tot_cor_sd <- tapply(arc_tot_cor_transect$arc_tot_cor_transect,
+                            arc_tot_cor_transect$sites, sd) #calculate sd for site using transect data
+arc_tot_cor_se <- round(arc_tot_cor_sd/sqrt(n),2) #calculate se by diving sd by sqrt of # of transects per site
+arc_tot_cor_site <- cbind(site, arc_tot_cor_mean, arc_tot_cor_se) #combine everything
+arc_tot_cor_site <- as.data.frame(arc_tot_cor_site) #turn into a data frame
+arc_tot_cor_site
+```
+
+```{r in situ corallivory mean by bite category}
+#SUMMARY:  taking the mean, sd, and se for in situ bite marks by category for each site by first summing bite marks in each quadrat, then taking the mean of the quadrats along each transect and then taking the mean of the transects at each site
+
+cor_density_by_cat_insitu <- matrix(ncol = 8, nrow = 10)
+bite_categs <- c("EXBR", "SCRAP", "EXCAV", "SCSP")
+mean_index <- c(1, 3, 5, 7)
+sd_index <- c(2, 4, 6, 8)
+
+for(i in 1:length(bite_categs)){
+  dat_use <- subset(cor_dat, BITE_CATEG == bite_categs[i]) #extract ith bite mark category
+  insitu_use <- subset(dat_use, METHOD == "INSITU") #subset INSITU data and do all calculations with INSITU data first
+  insitu_sum_quad <- tapply(insitu_use$NUMBER_BIT, insitu_use$T_Q, sum) #take the sum of the number of bites for each quadrat
+  insitu_sum_quad[is.na(insitu_sum_quad)] <- 0 #there will be T_Qs w/o corallivory, turn the 'NA' into zeros
+  insitu_sum_quad_df <- cbind(site_n, transects_n, T_Q, insitu_sum_quad) #bind results with site and transect names
+  insitu_sum_quad_df <- as.data.frame(insitu_sum_quad_df)#turn to data frame
+  cols_fac <- as.vector(colnames(insitu_sum_quad_df)[c(1:3)]) #select columns that are factors
+  insitu_sum_quad_df[cols_fac] <- lapply(insitu_sum_quad_df[cols_fac], factor) #turn those columns into factors
+  cols_num <- as.vector(colnames(insitu_sum_quad_df)[4]) #select columns that are numeric
+  insitu_sum_quad_df[cols_num] <- lapply(insitu_sum_quad_df[cols_num], as.numeric) #turn those columns into numeric
+  insitu_mean_transect <- tapply(insitu_sum_quad_df$insitu_sum_quad,
+                                  insitu_sum_quad_df$transects_n, mean) #take the mean number of bites for each transect using the sums of the quadrat data
+  insitu_mean_transect_df <- cbind(sites, transects, insitu_mean_transect)#bind columns together
+  insitu_mean_transect_df <- as.data.frame(insitu_mean_transect_df) #turn to data frame
+  cols_fac <- as.vector(colnames(insitu_mean_transect_df)[c(1:2)]) #select columns that are factors
+  insitu_mean_transect_df[cols_fac] <- lapply(insitu_mean_transect_df[cols_fac], factor) #turn those columns into factors
+  cols_num <- as.vector(colnames(insitu_mean_transect_df)[3]) #select columns that are numeric
+  insitu_mean_transect_df[cols_num] <- lapply(insitu_mean_transect_df[cols_num], as.numeric) #turn those columns into numeric
+  insitu_mean_site<- round(tapply(insitu_mean_transect_df$insitu_mean_transect,
+                             insitu_mean_transect_df$sites, mean), 2) #calculate mean for site using transect mean data (take mean of transect bite counts)
+  insitu_mean_site <- as.vector(insitu_mean_site) #turn to vector so can populate matrix
+  insitu_sd_site <- tapply(insitu_mean_transect_df$insitu_mean_transect,
+                            insitu_mean_transect_df$sites, sd) #calculate sd for site using transect data
+  insitu_se_site <- round(insitu_sd_site/sqrt(n),2) #calculate se by diving sd by sqrt of # of transects per site
+  insitu_se_site <- as.vector(insitu_se_site) #turn to vector so can populate matrix
+  cor_density_by_cat_insitu[,mean_index[i]] <- insitu_mean_site
+  cor_density_by_cat_insitu[,sd_index[i]] <- insitu_se_site
+}
+cor_density_by_cat_insitu <- as.data.frame(cor_density_by_cat_insitu) #turn to data frame
+rownames(cor_density_by_cat_insitu) <- site #change row names to the sites
+col_names <- c("EXBR_mean", "EXBR_se", 
+               "SCRAP_mean","SCRAP_se", 
+               "EXCAV_mean","EXCAV_se", 
+               "SCSP_mean", "SCSP_se")
+colnames(cor_density_by_cat_insitu) <- col_names
+cor_density_by_cat_insitu
+
+# tapply(cor_dat$NUMBER_BIT, cor_dat$BITE_CATEG, sum)
+```
+
+```{r arc corallivory density by bite category}
+#SUMMARY:  taking the mean, sd, min, and max for SfM bite marks for each site by first summing bite marks in each quadrat, then taking the mean of the quadrats along each transect and then taking the mean of the transects at each site 
+
+cor_density_by_cat_arc <- matrix(ncol = 8, nrow = 10)
+
+for(i in 1:length(bite_categs)){
+  dat_use <- subset(cor_dat, BITE_CATEG == bite_categs[i]) #extract X bite mark category
+  arc_use <- subset(dat_use, METHOD == "ARC") #subset ARC data and do all calculations with INSITU data first
+  arc_sum_quad <- tapply(arc_use$NUMBER_BIT, arc_use$T_Q, sum) #take the sum of the number of bites for each quadrat
+  arc_sum_quad[is.na(arc_sum_quad)] <- 0 #there will be T_Qs w/o corallivory, turn the 'NA' into zeros
+  arc_sum_quad_df <- cbind(site_n, transects_n, T_Q, arc_sum_quad) #bind results with site and transect names
+  arc_sum_quad_df <- as.data.frame(arc_sum_quad_df)#turn to data frame
+  cols_fac <- as.vector(colnames(arc_sum_quad_df)[c(1:3)]) #select columns that are factors
+  arc_sum_quad_df[cols_fac] <- lapply(arc_sum_quad_df[cols_fac], factor) #turn those columns into factors
+  cols_num <- as.vector(colnames(arc_sum_quad_df)[4]) #select columns that are numeric
+  arc_sum_quad_df[cols_num] <- lapply(arc_sum_quad_df[cols_num], as.numeric) #turn those columns into numeric
+  arc_mean_transect <- tapply(arc_sum_quad_df$arc_sum_quad,
+                                  arc_sum_quad_df$transects_n, mean) #take the mean number of bites for each transect using the sums of the quadrat data
+  arc_mean_transect_df <- cbind(sites, transects, arc_mean_transect)#bind columns together
+  arc_mean_transect_df <- as.data.frame(arc_mean_transect_df) #turn to data frame
+  cols_fac <- as.vector(colnames(arc_mean_transect_df)[c(1:2)]) #select columns that are factors
+  arc_mean_transect_df[cols_fac] <- lapply(arc_mean_transect_df[cols_fac], factor) #turn those columns into factors
+  cols_num <- as.vector(colnames(arc_mean_transect_df)[3]) #select columns that are numeric
+  arc_mean_transect_df[cols_num] <- lapply(arc_mean_transect_df[cols_num], as.numeric) #turn those columns into numeric
+  arc_mean_site<- round(tapply(arc_mean_transect_df$arc_mean_transect,
+                             arc_mean_transect_df$sites, mean), 2) #calculate mean for site using transect mean data (take mean of transect bite counts)
+  arc_mean_site <- as.vector(arc_mean_site) #turn to vector so can populate matrix
+  arc_sd_site <- tapply(arc_mean_transect_df$arc_mean_transect,
+                            arc_mean_transect_df$sites, sd) #calculate sd for site using transect data
+  arc_se_site <- round(arc_sd_site/sqrt(n),2) #calculate se by diving sd by sqrt of # of transects per site
+  arc_se_site <- as.vector(arc_se_site) #turn to vector so can populate matrix
+  cor_density_by_cat_arc[,mean_index[i]] <- arc_mean_site
+  cor_density_by_cat_arc[,sd_index[i]] <- arc_se_site
+}
+cor_density_by_cat_arc <- as.data.frame(cor_density_by_cat_arc) #turn to data frame
+rownames(cor_density_by_cat_arc) <- site #change row names to the sites
+col_names <- c("EXBR_mean", "EXBR_se", 
+               "SCRAP_mean","SCRAP_se", 
+               "EXCAV_mean","EXCAV_se", 
+               "SCSP_mean", "SCSP_se")
+colnames(cor_density_by_cat_arc) <- col_names
+cor_density_by_cat_arc
+
+```
+
+```{r identify outliers and shapiro test}
+#SUMMARY: combine data frames from above (the ones with mean bite marks per transect), take difference between SfM and in situ counts, find outliers, check for normality with Shapiro test
+
+
+#make a data frame that combines the mean counts of total corallivory for each transect for each method (long data)
+insitu_df <- cbind(sites, transects, "INSITU", insitu_tot_cor_transect$insitu_tot_cor_transect)
+arc_df <- cbind(sites, transects, "ARC", arc_tot_cor_transect$arc_tot_cor_transect)
+tot_cor_transect_long <- rbind(insitu_df, arc_df)
+col_names <- c("site", "transect", "method", "bites")
+colnames(tot_cor_transect_long) <- col_names
+tot_cor_transect_long <- as.data.frame(tot_cor_transect_long)
+cols_fac <- as.vector(colnames(tot_cor_transect_long)[c(1:3)]) #select columns that are factors
+tot_cor_transect_long[cols_fac] <- lapply(tot_cor_transect_long[cols_fac], factor) #turn those columns into factors
+cols_num <- as.vector(colnames(tot_cor_transect_long)[4]) #select columns that are numeric
+tot_cor_transect_long[cols_num] <- lapply(tot_cor_transect_long[cols_num], as.numeric) 
+# str(tot_cor_transect_long)
+
+#make a data frame that combines the mean counts of total corallivory for each transect for each method (side by side)
+tot_cor_transect_df <- cbind(sites, transects, insitu_tot_cor_transect$insitu_tot_cor_transect,
+                             arc_tot_cor_transect$arc_tot_cor_transect)
+col_names <- c("site", "transect", "insitu", "arc")
+colnames(tot_cor_transect_df) <- col_names
+tot_cor_transect_df <- as.data.frame(tot_cor_transect_df)
+cols_fac <- as.vector(colnames(tot_cor_transect_df)[c(1:2)]) #select columns that are factors
+tot_cor_transect_df[cols_fac] <- lapply(tot_cor_transect_df[cols_fac], factor) #turn those columns into factors
+cols_num <- as.vector(colnames(tot_cor_transect_df)[3:4]) #select columns that are numeric
+tot_cor_transect_df[cols_num] <- lapply(tot_cor_transect_df[cols_num], as.numeric) 
+# tot_cor_transect_df
+
+#compute mean difference between arc and insitu data
+tot_cor_transect_df <- tot_cor_transect_df %>% mutate(differences = arc - insitu)
+# tot_cor_transect_df
+
+#identify outliers
+outliers <- tot_cor_transect_df %>% identify_outliers(differences)
+outliers
+
+#check normality by groups
+shapiro_test <- tot_cor_transect_df %>% shapiro_test(differences)
+shapiro_test
+
+```
+
+```{r shapiro test w/o outliers}
+#SUMMARY: remove outliers and check for normality with Shapiro test
+
+#remove rows with outliers
+tot_cor_transect_wo_outliers <- subset(tot_cor_transect_df, 
+                                       transect != "HAN1" &          
+                                       transect != "HAN2" &
+                                       transect != "HAN4" & 
+                                       transect != "KEW3" & 
+                                       transect != "KEW5") 
+# tot_cor_transect_wo_outliers
+
+#identify outliers
+outliers <- tot_cor_transect_wo_outliers %>% identify_outliers(differences)
+outliers
+
+#check normality by groups
+shapiro_test <- tot_cor_transect_wo_outliers %>% shapiro_test(differences)
+shapiro_test
+```
+
+```{r wilcoxon test with outliers}
+#SUMMARY: subset in situ and SfM data (from transect mean data frame created above), do a wilcox test with outliers to determine whether there is a statistically siginificant difference between methods and calculate Z value
+
+# #compute summary statistics by groups
+# group_by(tot_cor_transect_long, method) %>%
+#   summarise(
+#     count = n(),
+#     mean = mean(bites),
+#     median = median(bites, na.rm = TRUE),
+#     IQR = IQR(bites, na.rm = TRUE)
+#   )
+
+#subset data for wilcox test
+insitu <- subset(tot_cor_transect_long,
+                 method == "INSITU",
+                 bites,
+                 drop = T)
+arc <- subset(tot_cor_transect_long,
+              method == "ARC",
+              bites, 
+              drop = T)
+
+# tot_cor_transect_long
+# wilcox test
+
+wilcox.outliers <- wilcox.test(insitu, arc, paired = T)
+wilcox.outliers
+
+#calculate z value
+V_statistic <- 168.5
+n <- 39
+(V_statistic - (n*(n + 1))/4) / sqrt((n*(n + 1)*(2*n + 1))/24)
+```
+
+```{r number and diff of bite marks per m^2 of hard coral}
+# SUMMARY: take the mean number of bite marks for each transect and divide by amount of hard coral cover per transect, then take the difference between methods and calculate the mean difference for each method
+
+#add hard coral cover column to df
+HC <- as.vector(transect_HC_data$transect_HC_means)
+tot_cor_transect_long$HC <- c(NA) 
+# tot_cor_transect_long
+
+for(i in 1:length(transects)){
+  specific_transects <- as.vector(which(tot_cor_transect_long$transect == transects[i])) #which rows have this transect number
+  tot_cor_transect_long[specific_transects, 5] <- HC[i] #for the rows with this transect number fill in the appropriate hard coral cover
+}
+tot_cor_transect_long$HC <- as.numeric(tot_cor_transect_long$HC)
+# tot_cor_transect_long
+
+#multiply HC by # of bite marks to get # of bite marks/m^2 of hard coral
+tot_cor_transect_long$bites_m2 <- tot_cor_transect_long$bites/(tot_cor_transect_long$HC/100)
+# tot_cor_transect_long
+
+#take the difference between methods
+diff_bites <- tot_cor_transect_long %>%
+  group_by(transect) %>%
+  summarize(bite_difference = sum(bites_m2[method == "ARC"]) - sum(bites_m2[method == "INSITU"]))
+
+#take the mean difference
+diff_bites
+# mean(diff_bites$bite_difference)
+
+#calculate mean, range # of bite marks/m^2 of live tissue
+number_bites <- tot_cor_transect_long %>%
+  group_by(method) %>%
+  summarize(
+    mean = mean(bites_m2), 
+    se = sd(bites_m2)/sqrt(39), 
+    min = min(bites_m2), 
+    max = max(bites_m2)
+  )
+number_bites
+```
+
+```{r}
+bite_categ_transect_mean <- cor_dat %>%
+  group_by(TRANSECT, METHOD, BITE_CATEG) %>%
+  summarize(MEAN = mean(NUMBER_BIT))
+# bite_categ_transect_mean
+
+diff_bites_bite_categ <- bite_categ_transect_mean %>%
+  group_by(TRANSECT, BITE_CATEG) %>%
+  summarize(bite_difference = sum(MEAN[METHOD == "ARC"]) - sum(MEAN[METHOD == "INSITU"]))
+# diff_bites_bite_categ
+```
+
+```{r FIGURE box plot aggregate corallivory}
+#SUMMARY: boxplot of mean number of bite marks per transect with lines connecting transect level data
+
+# tot_cor_transect_long
+tot_cor_transect_long <- tot_cor_transect_long %>%
+  mutate(shape = ifelse(transect %in% c("HAN1", "HAN2", "HAN4", "KEW3", "KEW5"), "triangle", "circle"))
+# tot_cor_transect_long
+
+tot_cor_transect_long$method <- factor(tot_cor_transect_long$method, levels=c('INSITU', 'ARC'))
+fill_cols <- c("#6CB7B6", "#D48888")
+y_lab <- expression(paste("Number of Bite Marks (per ", m^{2}, ")"))
+
+# ggplot(tot_cor_transect_long, aes(method, bites, fill=method)) +
+#   geom_boxplot()+
+#   scale_fill_manual(values = fill_cols) +
+#   geom_point(aes(fill=method,group=transect),size=1,shape=21)+
+#   geom_line(aes(group=transect), linetype=1, size=0.3) +
+#   theme_few() +
+#   xlab("Method") + 
+#   ylab(y_lab) +
+#   scale_x_discrete(labels = c("In situ", "SfM"))
+
+# tot_cor_transect_long
+
+ggplot(tot_cor_transect_long, aes(method, bites, fill=method)) +
+  geom_boxplot()+
+  geom_point(aes(fill=method, group=transect, shape = shape), size=2)+
+  scale_shape_manual(values = c("circle" = 21, "triangle" = 24)) +
+  scale_fill_manual(values = fill_cols) +
+  geom_line(aes(group=transect), linetype=1, size=0.3) +
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  xlab("Method") + 
+  ylab(y_lab) +
+  scale_x_discrete(labels = c("In-water", "SfM")) 
+
+
+ggsave("Fig 2_corallivory by transect_unedited.png", plot = last_plot(), width = 6, height = 4, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r test method x depth interaction}
+# SUMMARY: fit generalize linear mixed effects model with depth * method interaction and test for the significance of the interaction. Because the interaction was significant, texst for differences between slopes
+
+#extract depth data and add to data frame
+depths <- round(rep(transect_depths$depths, 2), 2)
+tot_cor_transect_long$depths <- depths
+tot_cor_transect_long$depths <- as.numeric(tot_cor_transect_long$depths)
+tot_cor_transect_long$bites <- round(tot_cor_transect_long$bites, 0)
+# tot_cor_transect_long
+
+# Fit model with interaction
+method.depth_int <- glmer(bites ~ depths * method + (1|site), family = "poisson", data = tot_cor_transect_long)
+# summary(method.depth_int)
+
+#fit model w/o interaction
+method.depth_add <- glmer(bites ~ depths + method + (1|site), family = "poisson", data = tot_cor_transect_long)
+# summary(method.depth_add)
+
+#test the significance of the interaction
+anova(method.depth_int, method.depth_add)
+
+#pairwise comparisons of slopes 
+lstrends(method.depth_int, pairwise ~ method, var = "depths", adjust = "tukey")
+```
+
+```{r diagnostics methods x depth interaction}
+# SUMMARY: checking model fit
+
+hist(residuals(method.depth_int))
+qqPlot(residuals(method.depth_int))
+```
+
+```{r FIGURE method x depth interaction}
+# SUMMARY: generating predicted curves + confidence intervals based on the model and plotting these with the actual data
+
+# Generate predictions using ggpredict
+pred_depth <- as.data.frame(ggpredict(method.depth_int, terms = c("depths", "method"), interval = "confidence"))
+
+#stuff for the actual plot
+y_lab <- expression(paste("Number of Bite Marks (per ", m^{2}, ")"))
+colors <- c("#6CB7B6", "#D48888")
+
+#plot
+ggplot(pred_depth, aes(x = x, y = predicted)) +
+  geom_line(aes(color = group)) + # Line plot of predicted values 
+  scale_color_manual(values = colors) +
+  geom_point(data = tot_cor_transect_long, aes(x = depths, y = bites, color = method), size = 2) + # add data points
+  geom_ribbon(data = pred_depth, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.3) +# add CI
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  xlab("Depth") +
+  ylab(y_lab) +
+  scale_color_manual(values = colors) +
+  scale_fill_manual(values = colors) 
+  # theme(panel.background = element_rect(fill = "#F8F8F3"),
+  #       plot.background=  element_rect(fill = "#F8F8F3"),
+  #       legend.background  = element_rect(fill = "#F8F8F3"),
+  #       legend.key  = element_rect(fill = "#F8F8F3"))
+
+ggsave("Fig 3_corallivory by depth_unedited.png", plot = last_plot(), width = 6, height = 4, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r test methods x HC interaction}
+# SUMMARY: fit generalize linear mixed effects model with HC * method interaction and test for the significance of the interaction. Because the interaction was significant, test for differences between slopes
+
+# tot_cor_transect_long
+
+# Fit model with interaction
+method.HC_int <- glmer(bites ~ HC * method + (1|site), family = "poisson", data = tot_cor_transect_long)
+# summary(method.depth_int)
+
+#fit model w/o interaction
+method.HC_add <- glmer(bites ~ HC + method + (1|site), family = "poisson", data = tot_cor_transect_long)
+# summary(method.depth_add)
+
+#test the significance of the interaction
+anova(method.HC_int, method.HC_add)
+
+#pairwise comparisons of slopes 
+lstrends(method.HC_int, pairwise ~ method, var = "HC", adjust = "tukey")
+```
+
+```{r FIGURE depth x method interaction}
+# SUMMARY: generating predicted curves + confidence intervals based on the model and plotting these with the actual data
+
+# Generate predictions using ggpredict
+pred_HC <- as.data.frame(ggpredict(method.HC_int, terms = c("HC", "method"), interval = "confidence"))
+
+#stuff for the actual plot
+y_lab <- expression(paste("Number of Bite Marks (per ", m^{2}, ")"))
+colors <- c("#6CB7B6", "#D48888")
+
+#plot
+ggplot(pred_HC, aes(x = x, y = predicted)) +
+  geom_line(aes(color = group)) + # Line plot of predicted values 
+  scale_color_manual(values = colors) +
+  geom_point(data = tot_cor_transect_long, aes(x = HC, y = bites, color = method), size = 2) + # add data points
+  geom_ribbon(data = pred_HC, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.3) +# add CI
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  xlab("Hard Coral Cover (%)") +
+  ylab(y_lab) +
+  scale_color_manual(values = colors) +
+  scale_fill_manual(values = colors) 
+  # theme(panel.background = element_rect(fill = "#F8F8F3"),
+  #       plot.background=  element_rect(fill = "#F8F8F3"),
+  #       legend.background  = element_rect(fill = "#F8F8F3"),
+  #       legend.key  = element_rect(fill = "#F8F8F3"))
+
+ggsave("HC_VS_NBiteMarks.png", plot = last_plot(), width = 6, height = 4, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r data frame for models}
+# SUMMARY: sum # of bites by quadrat/predator/spp, take diff for each quadrat between arc and insitu, calculate transect mean based on quadrat data. Add other data to DF (HC, depth, depth bins, and site names)
+
+#remove rows with "NONE"
+cor_dat_NONE <- subset(cor_dat, BITE_CATEG  != "NONE")
+
+#step 1: sum number of bite marks in each quafdrat
+quad_sums <- cor_dat_NONE %>% 
+  group_by(METHOD, TRANSECT, T_Q, BITE_CATEG, CORAL_CODE) %>%
+  summarise(
+    SUM = sum(NUMBER_BIT)
+  )
+# quad_sums
+
+# step 2: take differences for each quadrat
+quad_diffs <- quad_sums%>% 
+  group_by(TRANSECT, T_Q, BITE_CATEG, CORAL_CODE) %>%
+  summarise(
+    diff = sum(SUM[METHOD == "ARC"]) - sum(SUM[METHOD == "INSITU"]))
+# quad_diffs
+
+
+#step 3: calculate mean of the differences by transect/bite categ/spp
+transect_diffs <- quad_diffs %>%
+  group_by(TRANSECT, BITE_CATEG, CORAL_CODE) %>%
+  summarise(
+    mean_diff = mean(diff)
+  )
+transect_diffs$mean_diff <- as.numeric(transect_diffs$mean_diff)
+
+#step 4: add HC to data frame
+HC <- as.vector(transect_HC_data$transect_HC_means)
+transect_diffs$HC <- c(NA) 
+
+for(i in 1:length(transects)){
+  specific_transects <- as.vector(which(transect_diffs$TRANSECT == transects[i])) #which rows have this transect number
+  transect_diffs[specific_transects, 5] <- HC[i] #for the rows with this transect number fill in the appropriate habitat type
+}
+transect_diffs$HC <- as.numeric(transect_diffs$HC)
+
+#step 5: add depths
+depths <- as.vector(transect_depths$depths)
+transect_diffs$depth <- c(NA) 
+
+for(i in 1:length(transects)){
+  specific_transects <- as.vector(which(transect_diffs$TRANSECT == transects[i])) #which rows have this transect number
+  transect_diffs[specific_transects, 6] <- depths[i] #for the rows with this transect number fill in the appropriate habitat type
+}
+
+transect_diffs$depth <- as.numeric(transect_diffs$depth)
+
+#step 6: add depth bins
+# max(transect_diffs$depth) #max depth 17.46
+transect_diffs$depth_bin <- cut(transect_diffs$depth, breaks = seq(0, 20, by = 5), labels = FALSE) # Create bins of 10 meters each
+transect_diffs$depth_bin <- as.factor(transect_diffs$depth_bin)
+
+#step 7: add site
+transect_diffs$site <- c(NA) 
+for(i in 1:length(transects)){
+  specific_transects <- as.vector(which(transect_diffs$TRANSECT == transects[i])) #which rows have this transect number
+  transect_diffs[specific_transects, 8] <- sites[i] #for the rows with this transect number fill in the appropriate habitat type
+}
+transect_diffs$site <- as.factor(transect_diffs$site)
+
+transect_diffs$CORAL_CODE <- factor(transect_diffs$CORAL_CODE, levels = c("MCAP", "MPAT", "PDUE", "PDAM", "PGRA", "PLIG", "PMEA", "PCOM", "PMAS"))
+transect_diffs
+```
+
+```{r new data frame for models}
+# SUMMARY: sum # of bites by quadrat/predator/spp, calculate transect mean based on quadrat data. Reshape data so it's in "long" format. Add other data to DF (HC, depth, depth bins, and site names)
+
+#remove rows with "NONE"
+cor_dat_NONE <- subset(cor_dat, BITE_CATEG  != "NONE")
+
+#step 1: sum number of bite marks in each quadrat
+quad_sums <- cor_dat_NONE %>% 
+  group_by(METHOD, TRANSECT, T_Q, BITE_CATEG, CORAL_CODE) %>%
+  summarise(
+    SUM = sum(NUMBER_BIT)
+  )
+
+#step 2: take the mean # of bite marks per quadrat
+transect_dat <- quad_sums %>%
+  group_by(TRANSECT, BITE_CATEG, CORAL_CODE) %>%
+  pivot_wider(names_from = METHOD, values_from = SUM) %>%
+  summarise(
+    transect_mean_ARC = mean(ARC),
+    transect_mean_INSITU = mean(INSITU)
+  )
+
+transect_dat[is.na(transect_dat)] <- 0 #replace NAs with 0s
+# transect_dat
+
+#step 3: turn the "insitu" and "arc" transect means into rows with corresponding data
+reshaped_data <- transect_dat %>%
+  pivot_longer(cols = starts_with("transect_mean"), 
+               names_to = "METHOD", 
+               values_to = "transect_mean")
+
+transect_dat <- reshaped_data
+transect_dat$METHOD <- as.factor(transect_dat$METHOD)
+
+#step 4: add HC to data frame
+HC <- as.vector(round(transect_HC_data$transect_HC_means, 0))
+transect_dat$HC <- c(NA) 
+
+for(i in 1:length(transects)){
+  specific_transects <- as.vector(which(transect_dat$TRANSECT == transects[i])) #which rows have this transect number
+  transect_dat[specific_transects, 6] <- HC[i] #for the rows with this transect number fill in the appropriate habitat type
+}
+transect_dat$HC <- as.numeric(transect_dat$HC)
+
+
+#step 5: add depths
+depths <- as.vector(transect_depths$depths)
+transect_dat$depth <- c(NA) 
+
+for(i in 1:length(transects)){
+  specific_transects <- as.vector(which(transect_dat$TRANSECT == transects[i])) #which rows have this transect number
+  transect_dat[specific_transects, 7] <- depths[i] #for the rows with this transect number fill in the appropriate habitat type
+}
+
+transect_dat$depth <- as.numeric(transect_dat$depth)
+
+#step 6: add depth bins
+# max(transect_dat$depth) #max depth 17.46
+transect_dat$depth_bin <- cut(transect_dat$depth, breaks = seq(0, 20, by = 5), labels = FALSE) # Create bins of 10 meters each
+transect_dat$depth_bin <- as.factor(transect_dat$depth_bin)
+
+#step 7: add site
+transect_dat$site <- c(NA) 
+for(i in 1:length(transects)){
+  specific_transects <- as.vector(which(transect_dat$TRANSECT == transects[i])) #which rows have this transect number
+  transect_dat[specific_transects, 9] <- sites[i] #for the rows with this transect number fill in the appropriate habitat type
+}
+transect_dat$site <- as.factor(transect_dat$site)
+
+transect_dat$CORAL_CODE <- factor(transect_dat$CORAL_CODE, levels = c("MCAP", "MPAT", "PDUE", "PDAM", "PGRA", "PLIG", "PMEA", "PCOM", "PMAS"))
+
+#step 8: change factor names in the methods column
+levels(transect_dat$METHOD) <- c("ARC", "INSITU")
+transect_dat$transect_mean <- round(transect_dat$transect_mean, 0)
+transect_dat
+```
+
+```{r test HC x method x bite category interaction, warning=F}
+# SUMMARY: create model with HC, method and bite category interaction and test the significance
+
+#fit model with interaction
+bite.HC.method_int <- glmer(transect_mean ~ HC * METHOD * BITE_CATEG + (1|site) + (1|depth_bin), family = "poisson", data = transect_dat) 
+# summary(bite.HC.method_int)
+
+
+#fit model w/o interaction
+bite.HC.method_add <- glmer(transect_mean ~ HC + METHOD + BITE_CATEG + (1|site) + (1|depth_bin), family = "poisson", data = transect_dat) 
+
+#test the significance of the interaction
+anova(bite.HC.method_int, bite.HC.method_add) #three way interaction significant
+```
+
+```{r test HC x method x bite category interaction (EXCAV and SCRAP combined), warning=F}
+# SUMMARY: combine scraper and excavator data. Create model with HC, method and bite category interaction and test the significance
+
+#combine scrap/excav data
+df_combined <- transect_dat %>%
+  filter(BITE_CATEG %in% c("SCRAP", "EXCAV")) %>%
+  group_by(TRANSECT, CORAL_CODE, METHOD, HC, depth, depth_bin, site) %>%
+  summarise(transect_mean = sum(transect_mean))
+
+#add bite category column
+df_combined$BITE_CATEG <- "EXCAV.SCRAP"
+
+#organize columns
+order_cols <- as.vector(colnames(transect_dat))
+df_combined <- df_combined[,order_cols]
+
+#remove scrap and excav data from new data frame and add combined data
+transect_dat2 <- subset(transect_dat, BITE_CATEG != "EXCAV" &          
+                               BITE_CATEG != "SCRAP")
+transect_dat2 <- rbind(transect_dat2, df_combined)
+
+#fit model with interaction
+bite.HC.method_int <- glmer(transect_mean ~ HC * METHOD * BITE_CATEG + (1|site) + (1|depth_bin), family = "poisson", data = transect_dat2)
+# summary(bite.HC.method_int)
+
+
+#fit model w/o interaction
+bite.HC.method_add <- glmer(transect_mean ~ HC + METHOD + BITE_CATEG + (1|site) + (1|depth_bin), family = "poisson", data = transect_dat2) 
+
+#test the significance of the interaction
+anova(bite.HC.method_int, bite.HC.method_add) #three way interaction significant
+```
+
+```{r diagnostics HC x method x bite category}
+# SUMMARY: check model fit
+
+hist(residuals(bite.HC.method_int))
+qqPlot(residuals(bite.HC.method_int))
+```
+
+```{r test HC x bite category interaction for EXBR data}
+#SUMMARY: because method x HC x bite category interaction significant, test HC x method interaction for each coral predator. WHen interaction significant, test for difference between slopes. 
+
+EXBR.dat <- subset(transect_dat, BITE_CATEG == "EXBR")
+
+#fit model with interaction
+method.HC_int.EXBR <- glmer(transect_mean ~ HC * METHOD + (1|site) + (1|depth_bin), family = "poisson", data = EXBR.dat) 
+# summary(method.HC_int.EXBR)
+
+#fit model w/o interaction
+method.HC_add.EXBR <- glmer(transect_mean ~ HC + METHOD + (1|site) + (1|depth_bin), family = "poisson", data = EXBR.dat)  
+
+#test the significance of the interaction
+anova(method.HC_int.EXBR, method.HC_add.EXBR) 
+
+#pairwaise comparisons between slopes
+lstrends(method.HC_int.EXBR, pairwise ~ METHOD, var = "HC", adjust = "tukey")
+```
+
+```{r diagnostics HC x bite category EXBR}
+#sUMMARY: check model fit
+hist(residuals(method.HC_int.EXBR))
+qqPlot(residuals(method.HC_int.EXBR))
+```
+
+```{r test HC x bite category interaction for SCSP data}
+#SUMMARY: because method x HC x bite category interaction significant, test HC x method interaction for each coral predator. WHen interaction significant, test for difference
+
+SCSP.dat <- subset(transect_dat, BITE_CATEG == "SCSP")
+
+#fit model with interaction
+method.HC_int.SCSP <- glmer(transect_mean ~ HC * METHOD + (1|site) + (1|depth_bin), family = "poisson", data = SCSP.dat) 
+# summary(method.HC_int.EXBR)
+
+#fit model w/o interaction
+method.HC_add.SCSP <- glmer(transect_mean ~ HC + METHOD + (1|site) + (1|depth_bin), family = "poisson", data = SCSP.dat)  
+
+#test the significance of the interaction
+anova(method.HC_int.SCSP, method.HC_add.SCSP) 
+
+#pairwaise comparisons between slopes
+lstrends(method.HC_int.SCSP, pairwise ~ METHOD, var = "HC", adjust = "tukey")
+```
+
+```{r diagnostics HC x bite category SCSP}
+#SUMMARY: check model fit
+
+hist(residuals(method.HC_int.SCSP))
+qqPlot(residuals(method.HC_int.SCSP))
+```
+
+```{r test HC x bite category interaction for EXCAV data}
+#SUMMARY: because method x HC x bite category interaction significant, test HC x method interaction for each coral predator. WHen interaction significant, test for difference
+
+EXCAV.dat <- subset(transect_dat, BITE_CATEG == "EXCAV")
+
+#fit model with interaction
+method.HC_int.EXCAV <- glmer(transect_mean ~ HC * METHOD + (1|site) + (1|depth_bin), family = "poisson", data = EXCAV.dat) 
+# summary(method.HC_int.EXBR)
+
+#fit model w/o interaction
+method.HC_add.EXCAV <- glmer(transect_mean ~ HC + METHOD + (1|site) + (1|depth_bin), family = "poisson", data = EXCAV.dat)  
+
+#test the significance of the interaction
+anova(method.HC_int.EXCAV, method.HC_add.EXCAV) 
+
+#pairwaise comparisons between slopes
+lstrends(method.HC_int.EXCAV, pairwise ~ METHOD, var = "HC", adjust = "tukey")
+```
+
+```{r diagnostics HC x bite category EXCAV}
+#SUMMARY: check model fit
+
+hist(residuals(method.HC_int.EXCAV))
+qqPlot(residuals(method.HC_int.EXCAV))
+```
+
+```{r test HC x bite category interaction for SCAP data}
+#SUMMARY: because method x HC x bite category interaction significant, test HC x method interaction for each coral predator. WHen interaction significant, test for difference
+
+SCRAP.dat <- subset(transect_dat, BITE_CATEG == "SCRAP")
+
+#fit model with interaction
+method.HC_int.SCRAP <- glmer(transect_mean ~ HC * METHOD + (1|site) + (1|depth_bin), family = "poisson", data = SCRAP.dat) 
+# summary(method.HC_int.EXBR)
+
+#fit model w/o interaction
+method.HC_add.SCRAP <- glmer(transect_mean ~ HC + METHOD + (1|site) + (1|depth_bin), family = "poisson", data = SCRAP.dat)  
+
+#test the significance of the interaction
+anova(method.HC_int.SCRAP, method.HC_add.SCRAP) 
+
+#pairwaise comparisons between slopes
+lstrends(method.HC_int.SCRAP, pairwise ~ METHOD, var = "HC", adjust = "tukey")
+```
+
+```{r diagnostics HC x bite category SCRAP}
+# SUMMARY: test model fit
+hist(residuals(method.HC_int.SCRAP))
+qqPlot(residuals(method.HC_int.SCRAP))
+```
+
+```{r test HC x bite category interaction for SCAP and EXCAV data combined}
+#SUMMARY: because method x HC x bite category interaction significant, test HC x method interaction for each coral predator. WHen interaction significant, test for difference
+
+#use df_combined data frame
+
+#fit model with interaction
+df_combined
+method.HC_int.SCRAP_EXCAV <- glmer(transect_mean ~ HC * METHOD + (1|site) + (1|depth_bin), family = "poisson", data = df_combined) 
+# summary(method.HC_int.EXBR)
+
+#fit model w/o interaction
+method.HC_add.SCRAP_EXCAV <- glmer(transect_mean ~ HC + METHOD + (1|site) + (1|depth_bin), family = "poisson", data = df_combined)  
+
+#test the significance of the interaction
+anova(method.HC_int.SCRAP_EXCAV, method.HC_add.SCRAP_EXCAV) 
+
+#pairwaise comparisons between slopes
+lstrends(method.HC_int.SCRAP_EXCAV, pairwise ~ METHOD, var = "HC", adjust = "tukey")
+```
+
+```{r objective 4 coral spp removed data}
+#SUMMARY: remove rare species from data set
+
+#Parrotfish
+SCSP.counts <- SCSP.dat[SCSP.dat$CORAL_CODE == "PDUE" | SCSP.dat$CORAL_CODE == "PMEA", ]
+removed_spp_dat <- SCSP.counts
+
+#Excavator
+EXCAV.counts <- EXCAV.dat[EXCAV.dat$CORAL_CODE == "PDUE" | EXCAV.dat$CORAL_CODE == "PGRA", ]
+removed_spp_dat <- rbind(removed_spp_dat, EXCAV.counts)
+
+#Scraper
+SCRAP.counts <- SCRAP.dat[SCRAP.dat$CORAL_CODE == "PDUE" | SCRAP.dat$CORAL_CODE == "PLIG" | 
+                            SCRAP.dat$CORAL_CODE == "PDAM" | SCRAP.dat$CORAL_CODE == "PGRA", ]
+removed_spp_dat <- rbind(removed_spp_dat, SCRAP.counts)
+removed_spp_dat
+```
+
+```{r FIGURE METHOD x HC interaction EXBR data}
+# SUMMARY: create prediction curves and confidence intervals for HC x method models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+pred_method.HC.EXBR <- as.data.frame(ggpredict(method.HC_int.EXBR, terms = c("HC", "METHOD"), interval = "confidence"))
+# pred_method.HC.EXBR
+
+#stuff for the actual plot
+y_lab <- expression(paste("Number of Bite Marks (per ", m^{2}, ")"))
+colors <- c("#6CB7B6", "#D48888")
+pred_method.HC.EXBR$group <- factor(pred_method.HC.EXBR$group, levels = c("INSITU", "ARC"))
+leg_lab <- c("In situ", "ArcGIS Pro")
+
+
+#plot
+method.HC.EXBR.plot <- ggplot(pred_method.HC.EXBR, aes(x = x, y = predicted)) +
+  geom_line(aes(color = group)) +  # Line plot of predicted values 
+  scale_color_manual(values = colors) +
+  geom_point(data = EXBR.dat, aes(x = HC, y = transect_mean, color = METHOD), size = 2) + # add data points
+  geom_ribbon(data = pred_method.HC.EXBR, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.45) +# add CI
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  xlab("Hard Coral Cover") +
+  ylab(y_lab) +
+  scale_color_manual("Methods", values = colors, labels = leg_lab) +
+  scale_fill_manual("Methods", values = colors, labels = leg_lab) +
+  scale_y_continuous(limits = c(0, 125), breaks = seq(0, 125, by = 25)) +
+  scale_x_continuous(limits = c(0, 60), breaks = seq(0, 60, by = 20)) 
+  # theme(panel.background = element_rect(fill = "#F8F8F3"),
+  #       plot.background=  element_rect(fill = "#F8F8F3"),
+  #       legend.background  = element_rect(fill = "#F8F8F3"),
+  #       legend.key  = element_rect(fill = "#F8F8F3"))
+
+method.HC.EXBR.plot
+ggsave("Fig 4a_corallivory by depth_blenny_unedited.png", plot = last_plot(), width = 6, height = 4, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r FIGURE METHOD x HC interaction SCSP data}
+# SUMMARY: create prediction curves and confidence intervals for HC x method models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+pred_method.HC.SCSP <- as.data.frame(ggpredict(method.HC_int.SCSP, terms = c("HC", "METHOD"), interval = "confidence"))
+# pred_method.HC.EXBR
+
+#stuff for the actual plot
+y_lab <- expression(paste("Number of Bite Marks (per ", m^{2}, ")"))
+colors <- c("#6CB7B6", "#D48888")
+pred_method.HC.SCSP$group <- factor(pred_method.HC.SCSP$group, levels = c("INSITU", "ARC"))
+leg_lab <- c("In situ", "ArcGIS Pro")
+
+
+#plot
+method.HC.SCSP.plot <- ggplot(pred_method.HC.SCSP, aes(x = x, y = predicted)) +
+  geom_line(aes(color = group)) +  # Line plot of predicted values 
+  scale_color_manual(values = colors) +
+  geom_point(data = SCSP.dat, aes(x = HC, y = transect_mean, color = METHOD), size = 2) + # add data points
+  geom_ribbon(data = pred_method.HC.SCSP, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.45) +# add CI
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  xlab("Hard Coral Cover") +
+  ylab(y_lab) +
+  scale_color_manual("Methods", values = colors, labels = leg_lab) +
+  scale_fill_manual("Methods", values = colors, labels = leg_lab) +
+  scale_y_continuous(limits = c(0, 125), breaks = seq(0, 125, by = 25)) +
+  scale_x_continuous(limits = c(0, 60), breaks = seq(0, 60, by = 20)) 
+  # theme(panel.background = element_rect(fill = "#F8F8F3"),
+  #       plot.background=  element_rect(fill = "#F8F8F3"),
+  #       legend.background  = element_rect(fill = "#F8F8F3"),
+  #       legend.key  = element_rect(fill = "#F8F8F3"))
+
+method.HC.SCSP.plot
+ggsave("Fig 4b_corallivory by depth_parrotfish_unedited.png", plot = last_plot(), width = 6, height = 4, 
+      path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r FIGURE METHOD x HC interaction EXCAV data}
+# SUMMARY: create prediction curves and confidence intervals for HC x method models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+pred_method.HC.EXCAV <- as.data.frame(ggpredict(method.HC_int.EXCAV, terms = c("HC", "METHOD"), interval = "confidence"))
+# pred_method.HC.EXCAV
+
+#stuff for the actual plot
+y_lab <- expression(paste("Number of Bite Marks (per ", m^{2}, ")"))
+colors <- c("#6CB7B6", "#D48888")
+pred_method.HC.EXCAV$group <- factor(pred_method.HC.EXCAV$group, levels = c("INSITU", "ARC"))
+leg_lab <- c("In situ", "ArcGIS Pro")
+
+
+#plot
+method.HC.EXCAV.plot <- ggplot(pred_method.HC.EXCAV, aes(x = x, y = predicted)) +
+  geom_line(aes(color = group)) +  # Line plot of predicted values 
+  scale_color_manual(values = colors) +
+  geom_point(data = EXCAV.dat, aes(x = HC, y = transect_mean, color = METHOD), size = 2) + # add data points
+  geom_ribbon(data = pred_method.HC.EXCAV, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.45) +# add CI
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  xlab("Hard Coral Cover") +
+  ylab(y_lab) +
+  scale_color_manual("Methods", values = colors, labels = leg_lab) +
+  scale_fill_manual("Methods", values = colors, labels = leg_lab) +
+  scale_y_continuous(limits = c(0, 25), breaks = seq(0, 25, by = 5)) +
+  scale_x_continuous(limits = c(0, 60), breaks = seq(0, 60, by = 20)) 
+  # theme(panel.background = element_rect(fill = "#F8F8F3"),
+  #       plot.background=  element_rect(fill = "#F8F8F3"),
+  #       legend.background  = element_rect(fill = "#F8F8F3"),
+  #       legend.key  = element_rect(fill = "#F8F8F3"))
+
+
+method.HC.EXCAV.plot
+ggsave("Fig 4c_corallivory by depth_excavator_unedited.png", plot = last_plot(), width = 6, height = 4, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r FIGURE METHOD x HC interaction SCRAP data}
+# SUMMARY: create prediction curves and confidence intervals for HC x method models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+pred_method.HC.SCRAP <- as.data.frame(ggpredict(method.HC_int.SCRAP, terms = c("HC", "METHOD"), interval = "confidence"))
+pred_method.HC.SCRAP
+
+#stuff for the actual plot
+y_lab <- expression(paste("Number of Bite Marks (per ", m^{2}, ")"))
+colors <- c("#6CB7B6", "#D48888")
+pred_method.HC.SCRAP$group <- factor(pred_method.HC.SCRAP$group, levels = c("INSITU", "ARC"))
+leg_lab <- c("In situ", "ArcGIS Pro")
+
+
+#plot
+method.HC.SCRAP.plot <- ggplot(pred_method.HC.SCRAP, aes(x = x, y = predicted)) +
+  geom_line(aes(color = group)) +  # Line plot of predicted values 
+  scale_color_manual(values = colors) +
+  geom_point(data = SCRAP.dat, aes(x = HC, y = transect_mean, color = METHOD), size = 2) + # add data points
+  geom_ribbon(data = pred_method.HC.SCRAP, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.45) +# add CI
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  xlab("Hard Coral Cover") +
+  ylab(y_lab) +
+  scale_color_manual("Methods", values = colors, labels = leg_lab) +
+  scale_fill_manual("Methods", values = colors, labels = leg_lab) +
+  scale_y_continuous(limits = c(0, 60), breaks = seq(0, 60, by = 10)) +
+  scale_x_continuous(limits = c(0, 60), breaks = seq(0, 60, by = 20)) 
+  # theme(panel.background = element_rect(fill = "#F8F8F3"),
+  #       plot.background=  element_rect(fill = "#F8F8F3"),
+  #       legend.background  = element_rect(fill = "#F8F8F3"),
+  #       legend.key  = element_rect(fill = "#F8F8F3"))
+
+method.HC.SCRAP.plot
+ggsave("Fig 4d_corallivory by depth_scraper_unedited.png", plot = last_plot(), width = 6, height = 4, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r FIGURE combine figures for all bite mark categories method x HC interaction}
+#SUMMARY: Combine plots and edit
+
+#  stuff for plot
+y_lab <- expression(bold(paste("Number of Bite Marks (per ", m^{2}, ")")))
+x_lab <- expression(bold("Hard Coral Cover"))
+
+combined.plot <- ggarrange(method.HC.EXBR.plot + rremove("ylab") + rremove("xlab"), 
+          method.HC.SCSP.plot + rremove("ylab") + rremove("xlab"),
+          method.HC.EXCAV.plot + rremove("ylab") + rremove("xlab"), 
+          method.HC.SCRAP.plot + rremove("ylab") + rremove("xlab"), 
+          nrow = 2, ncol = 2, align = "hv",
+          common.legend = T, 
+          legend = "right") 
+
+annotate_figure(combined.plot, 
+                left = textGrob(y_lab, rot = 90, vjust = 1, gp = gpar(cex = 1)),
+                bottom = textGrob(x_lab, hjust = 0.9, gp = gpar(cex = 1)))
+ggsave("Fig 4Full_corallivory by HC and category_unedited.png", plot = last_plot(), width = 8, height = 6, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r SCSP test HC x coral_code interaction}
+#SUMMARY:  test HC x coral species interaction for each coral predator and method differences as the response. Because interaction was not significant, test each predictor independently to see whether either is significant. 
+
+SCSP.dat <- as.data.frame(subset(transect_diffs, BITE_CATEG == "SCSP"))
+# table(SCSP.dat$CORAL_CODE) #remove PDUE & PDUE
+SCSP.dat <- subset(SCSP.dat, CORAL_CODE != "PDUE" &          
+                               CORAL_CODE != "PMEA")
+# table(SCSP.dat$CORAL_CODE) #remove PDUE
+
+#build model with and without interaction
+SCSP.int <- lmer(mean_diff ~ CORAL_CODE * HC + (1|depth_bin) + (1|site), data = SCSP.dat)
+# summary(SCSP.int)
+SCSP.add <- lmer(mean_diff ~ CORAL_CODE + HC + (1|depth_bin) + (1|site), data = SCSP.dat)
+
+#test the significance of the interaction
+anova(SCSP.int, SCSP.add) # interaction not significant so work with additive model
+
+#build models with only one predictor
+SCSP.HC <- lmer(mean_diff ~ HC + (1|depth_bin) + (1|site), data = SCSP.dat) #use this as final model
+SCSP.coral <- lmer(mean_diff ~ CORAL_CODE  + (1|depth_bin) + (1|site), data = SCSP.dat)
+
+#test predictors
+anova(SCSP.add, SCSP.coral) #HC signif
+anova(SCSP.add, SCSP.HC) #coral code not signif
+```
+
+```{r SCSP diagnostincs HC x coral_code interaction}
+#SUMMARY: check model fit
+hist(residuals(SCSP.int))
+qqPlot(residuals(SCSP.int))
+hist(residuals(SCSP.add))
+qqPlot(residuals(SCSP.add))
+hist(residuals(SCSP.coral))
+qqPlot(residuals(SCSP.coral))
+```
+
+```{r FIGURE SCSP coral code x HC interaction}
+# SUMMARY: create prediction curves and confidence intervals for coral species x HCC models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+SCSP.mod.pred <- as.data.frame(ggpredict(SCSP.int, terms = c("HC [all]", "CORAL_CODE"),  interval = "confidence"))
+
+#stuff for the actual plot
+y_lab <- expression(paste("Difference in Number of Bite Marks (per ", m^{2}, ")"))
+palette.colors(palette = "set 3")
+colors <-c("#E692B1", "#9D6AC1",  "#86B160", "#CCC13F")
+            #MCAP         MPAT      PCOM       PMAS
+leg_lab <- c("Montipora capitata", "Montipora patula", 
+             "Porites compressa", "Porites massive")
+title <- expression(bold(Parrotfish))
+custom_ticks <- c(0, 25, 50, 75, 100)
+
+#figure out min and max HC values
+SCSP.dat %>% 
+  group_by(CORAL_CODE) %>%
+  summarise(
+    min = min(HC),
+    max = max(HC)
+  )
+
+#remove data for values below/above certain HC
+SCSP.mod.pred <- SCSP.mod.pred[!(SCSP.mod.pred$x < 4.9 & SCSP.mod.pred$group == "MCAP"), ]
+SCSP.mod.pred <- SCSP.mod.pred[!(SCSP.mod.pred$x > 71.02 & SCSP.mod.pred$group == "MCAP"), ]
+SCSP.mod.pred <- SCSP.mod.pred[!(SCSP.mod.pred$x < 2.45 & SCSP.mod.pred$group == "MPAT"), ]
+SCSP.mod.pred <- SCSP.mod.pred[!(SCSP.mod.pred$x > 57.55 & SCSP.mod.pred$group == "MPAT"), ]
+SCSP.mod.pred <- SCSP.mod.pred[!(SCSP.mod.pred$x < 2.45 & SCSP.mod.pred$group == "PCOM"), ]
+SCSP.mod.pred <- SCSP.mod.pred[!(SCSP.mod.pred$x >71.02 & SCSP.mod.pred$group == "PCOM"), ]
+SCSP.mod.pred <- SCSP.mod.pred[!(SCSP.mod.pred$x < 1.63 & SCSP.mod.pred$group == "PMAS"), ]
+SCSP.mod.pred <- SCSP.mod.pred[!(SCSP.mod.pred$x > 71.02 & SCSP.mod.pred$group == "PMAS"), ]
+
+#plot
+SCSP.plot <- ggplot(SCSP.mod.pred, aes(x = x, y = predicted)) +
+  geom_ribbon(data = SCSP.mod.pred, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.25, show.legend = F) + # add CI
+  geom_line(aes(color = group), size = 0.8, show.legend = F) +# Line plot of predicted values 
+  geom_jitter(data = SCSP.dat, aes(x = HC, y = mean_diff, color = CORAL_CODE), size = 2, show.legend = F) +# add data points
+  ylab(y_lab)  +
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  scale_color_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_fill_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_x_continuous(name="Hard Coral Cover", limits=c(0, 80))
+ 
+
+SCSP.plot
+```
+
+```{r EXBR test HC x coral_code interaction}
+#SUMMARY:  test HC x coral species interaction for each coral predator and method differences as the response. Because interaction significant, test for pairwise differences in slopes. Rerun analysis removing MCAP because of small sample size
+
+EXBR.dat <- as.data.frame(subset(transect_diffs, BITE_CATEG == "EXBR"))
+# table(EXBR.dat$CORAL_CODE) 
+
+#build model with and without interaction
+EXBR.int <- lmer(mean_diff ~ CORAL_CODE * HC + (1|depth_bin) + (1|site), data = EXBR.dat)
+# summary(EXBR.int)
+EXBR.add <- lmer(mean_diff ~ CORAL_CODE + HC + (1|depth_bin) + (1|site), data = EXBR.dat)
+
+#test the significance of the interaction
+anova(EXBR.int, EXBR.add) # interaction  significant so work with interaction model
+
+#pairwise comparisons of slopes
+lstrends(EXBR.int, pairwise ~ CORAL_CODE, var = "HC", adjust = "tukey")
+
+#pairwise comparisons of intercecpt
+em <- emmeans(EXBR.int, pairwise ~ CORAL_CODE) #estimated marginal means (intercepts) 
+pairwise <- pairs(em, adjust = "tukey")
+pairwise
+
+#test whether MCAP driving interaction
+EXBR.dat2 <- EXBR.dat[EXBR.dat$CORAL_CODE != "MCAP", ]
+
+EXBR.int2 <- lmer(mean_diff ~ CORAL_CODE * HC + (1|depth_bin) + (1|site), data = EXBR.dat2)
+EXBR.add2 <- lmer(mean_diff ~ CORAL_CODE + HC + (1|depth_bin) + (1|site), data = EXBR.dat2)
+
+anova(EXBR.int2, EXBR.add2) # interaction  significant so work with interaction model
+
+#pairwise comparisons of slope
+lstrends(EXBR.int2, pairwise ~ CORAL_CODE, var = "HC", adjust = "tukey")
+```
+
+```{r EXBR diagnostincs HC x coral_code interaction}
+#SUMMARY: check model fit
+hist(residuals(EXBR.int))
+qqPlot(residuals(EXBR.int))
+```
+
+```{r FIGURE EXBR coral code x HC interaction}
+# SUMMARY: create prediction curves and confidence intervals for coral species x HCC models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+EXBR.mod.pred <- as.data.frame(ggpredict(EXBR.int, terms = c("HC [all]", "CORAL_CODE"), interval = "confidence"))
+
+#stuff for the actual plot
+y_lab <- expression(paste("Difference in Number of Bite Marks (per ", m^{2}, ")"))
+colors <-c("#9D6AC1",  "#86B160", "#CCC13F")
+             # MPAT     PCOM       PMAS
+leg_lab <- c("Montipora capitata", "Montipora patula", "Porites compressa", "Porites massive")
+
+#figure out min and max HC values
+EXBR.dat %>% 
+  group_by(CORAL_CODE) %>%
+  summarise(
+    min = min(HC),
+    max = max(HC)
+  )
+
+#remove data for values below/above certain HC
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$x < 31.02 & EXBR.mod.pred$group == "MCAP"), ]
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$x > 57.55 & EXBR.mod.pred$group == "MCAP"), ]
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$x < 10.61 & EXBR.mod.pred$group == "MPAT"), ]
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$x > 57.55 & EXBR.mod.pred$group == "MPAT"), ]
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$x < 2.45 & EXBR.mod.pred$group == "PCOM"), ]
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$x > 57.96 & EXBR.mod.pred$group == "PCOM"), ]
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$x < 1.63 & EXBR.mod.pred$group == "PMAS"), ]
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$x > 57.55 & EXBR.mod.pred$group == "PMAS"), ]
+EXBR.mod.pred <- EXBR.mod.pred[!(EXBR.mod.pred$group == "MCAP"),]
+EXBR.dat <- EXBR.dat[!(EXBR.dat$CORAL_CODE == "MCAP"),]
+
+#plot
+EXBR.plot <- ggplot(EXBR.mod.pred, aes(x = x, y = predicted)) +
+  geom_ribbon(data = EXBR.mod.pred, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.25, show.legend = F) + # add CI
+  geom_line(aes(color = group), size = 0.8, show.legend = F) +# Line plot of predicted values 
+  geom_jitter(data = EXBR.dat, aes(x = HC, y = mean_diff, color = CORAL_CODE), size = 2, show.legend = F) +# add data points
+  ylab(y_lab)  +
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  scale_color_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_fill_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_x_continuous(name="Hard Coral Cover", limits=c(0, 80)) 
+
+EXBR.plot
+```
+
+```{r EXCAV test HC x coral_code interaction}
+#SUMMARY:  test HC x coral species interaction for each coral predator and method differences as the response. Because interaction was not significant, test each predictor independently to see whether either is significant. Coral species significant so tested for pairwise differences in intercepts
+
+EXCAV.dat <- as.data.frame(subset(transect_diffs, BITE_CATEG == "EXCAV"))
+# table(EXCAV.dat$CORAL_CODE) 
+EXCAV.dat <- subset(EXCAV.dat, CORAL_CODE != "PDUE" &          
+                               CORAL_CODE != "PGRA")
+# table(EXCAV.dat$CORAL_CODE) 
+
+#build model with and without interaction
+EXCAV.int <- lmer(mean_diff ~ CORAL_CODE * HC + (1|depth_bin) + (1|site), data = EXCAV.dat)
+# summary(EXCAV.int)
+EXCAV.add <- lmer(mean_diff ~ CORAL_CODE + HC + (1|depth_bin) + (1|site), data = EXCAV.dat)
+
+#test the significance of the interaction
+anova(EXCAV.int, EXCAV.add) # interaction not significant so work with additive model
+
+#build models with only one predictor
+EXCAV.HC <- lmer(mean_diff ~ HC + (1|depth_bin) + (1|site), data = EXCAV.dat)
+EXCAV.coral <- lmer(mean_diff ~ CORAL_CODE  + (1|depth_bin) + (1|site), data = EXCAV.dat)
+
+#test predictors
+anova(EXCAV.add, EXCAV.coral) #HC not signif
+anova(EXCAV.add, EXCAV.HC) #coral code  signif
+
+#pairwise comparisons of intercecpt for coral code
+em <- emmeans(EXCAV.coral, pairwise ~ CORAL_CODE) #estimated marginal means (intercepts) 
+pairwise <- pairs(em, adjust = "tukey")
+pairwise
+```
+
+```{r EXCAV diagnostincs HC x coral_code interaction}
+#SUMMARY: check model fit
+hist(residuals(EXCAV.int))
+qqPlot(residuals(EXCAV.int))
+hist(residuals(EXCAV.add))
+qqPlot(residuals(EXCAV.add))
+```
+
+```{r FIGURE EXCAV coral code x HC interaction}
+# SUMMARY: create prediction curves and confidence intervals for coral species x HCC models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+EXCAV.mod.pred <- as.data.frame(ggpredict(EXCAV.int, terms = c("HC [all]", "CORAL_CODE"), interval = "confidence"))
+# EXCAV.mod.pred
+
+#stuff for the actual plot
+y_lab <- expression(paste("Difference in Number of Bite Marks (per ", m^{2}, ")"))
+colors <-c("#E692B1", "#9D6AC1",  "#7EA2D2", "#86B160", "#CCC13F")
+            #MCAP        MPAT       PMEA.       PCOM.     PMAS
+leg_lab <- c("Montipora capitata", "Montipora patula", 
+             "Pocillopora meandrina", "Porites compressa", 
+             "Porites massive")
+#figure out min and max HC values
+EXCAV.dat %>% 
+  group_by(CORAL_CODE) %>%
+  summarise(
+    min = min(HC),
+    max = max(HC)
+  )
+
+#remove data for values below/above certain HC
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x < 16.33 & EXCAV.mod.pred$group == "MCAP"), ]
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x < 11.84 & EXCAV.mod.pred$group == "MPAT"), ]
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x < 1.63 & EXCAV.mod.pred$group == "PMEA"), ]
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x < 2.45 & EXCAV.mod.pred$group == "PCOM"), ]
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x < 1.63 & EXCAV.mod.pred$group == "PMAS"), ]
+
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x > 71.02 & EXCAV.mod.pred$group == "MCAP"), ]
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x > 49.39 & EXCAV.mod.pred$group == "MPAT"), ]
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x > 52.24 & EXCAV.mod.pred$group == "PMEA"), ]
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x > 71.02 & EXCAV.mod.pred$group == "PCOM"), ]
+EXCAV.mod.pred <- EXCAV.mod.pred[!(EXCAV.mod.pred$x > 57.55 & EXCAV.mod.pred$group == "PMAS"), ]
+
+#plot
+EXCAV.plot <- ggplot(EXCAV.mod.pred, aes(x = x, y = predicted)) +
+  geom_ribbon(data = EXCAV.mod.pred, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.25, show.legend = F) + # add CI
+  geom_line(aes(color = group), size = 0.8, show.legend = F) +# Line plot of predicted values 
+  geom_jitter(data = EXCAV.dat, aes(x = HC, y = mean_diff, color = CORAL_CODE), size = 2, show.legend = F) +# add data points
+  ylab(y_lab)  +
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  scale_color_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_fill_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_x_continuous(name="Hard Coral Cover", limits=c(0, 80)) 
+ 
+EXCAV.plot
+```
+
+```{r SCRAP test HC x coral_code interaction}
+#SUMMARY:  test HC x coral species interaction for each coral predator and method differences as the response. Because interaction was not significant, test each predictor independently to see whether either is significant. Coral species significant so tested for pairwise differences in intercepts
+
+SCRAP.dat <- as.data.frame(subset(transect_diffs, BITE_CATEG == "SCRAP"))
+# table(SCRAP.dat$CORAL_CODE) 
+SCRAP.dat <- subset(SCRAP.dat, CORAL_CODE != "PDUE" &          
+                               CORAL_CODE != "PDAM" &
+                               CORAL_CODE != "PGRA" &
+                               CORAL_CODE != "PLIG")
+# table(SCRAP.dat$CORAL_CODE) 
+
+#build model with and without interaction
+SCRAP.int <- lmer(mean_diff ~ CORAL_CODE * HC + (1|depth_bin) + (1|site), data = SCRAP.dat)
+# summary(SCRAP.int)
+SCRAP.add <- lmer(mean_diff ~ CORAL_CODE + HC + (1|depth_bin) + (1|site), data = SCRAP.dat)
+
+#test the significance of the interaction
+anova(SCRAP.int, SCRAP.add) # interaction not significant so work with additive model
+
+#build models with only one predictor
+SCRAP.HC <- lmer(mean_diff ~ HC + (1|depth_bin) + (1|site), data = SCRAP.dat)
+SCRAP.coral <- lmer(mean_diff ~ CORAL_CODE  + (1|depth_bin) + (1|site), data = SCRAP.dat)
+
+#test predictors
+anova(SCRAP.add, SCRAP.coral) #HC not signif
+anova(SCRAP.add, SCRAP.HC) #coral code not signif
+
+#pairwise comparisons of intercecpt
+em <- emmeans(SCRAP.coral, pairwise ~ CORAL_CODE) #estimated marginal means (intercepts) 
+pairwise <- pairs(em, adjust = "tukey") 
+pairwise
+```
+
+```{r SCRAP diagnostincs HC x coral_code interaction}
+#SUMMARY: check model fit
+hist(residuals(SCRAP.int))
+qqPlot(residuals(SCRAP.int))
+hist(residuals(SCRAP.add))
+qqPlot(residuals(SCRAP.add))
+```
+
+```{r FIGURE SCRAP coral code x HC interaction}
+# SUMMARY: create prediction curves and confidence intervals for coral species x HCC models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+SCRAP.mod.pred <- as.data.frame(ggpredict(SCRAP.int, terms = c("HC [all]", "CORAL_CODE"), interval = "confidence"))
+
+#stuff for the actual plot
+y_lab <- expression(paste("Difference in Number of Bite Marks (per ", m^{2}, ")"))
+colors <-c("#E692B1", "#9D6AC1",  "#7EA2D2", "#86B160", "#CCC13F")
+            #MCAP        MPAT      PMEA.       PCOM.     PMAS
+leg_lab <- c("Montipora capitata", "Montipora patula", 
+             "Pocillopora meandrina",
+             "Porites compressa", "Porites massive")
+
+#figure out min and max HC values
+SCRAP.dat %>% 
+  group_by(CORAL_CODE) %>%
+  summarise(
+    min = min(HC),
+    max = max(HC)
+  )
+
+#remove data for values below/above certain HC
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x < 2.45 & SCRAP.mod.pred$group == "MCAP"), ]
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x < 4.08 & SCRAP.mod.pred$group == "MPAT"), ]
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x < 1.63 & SCRAP.mod.pred$group == "PMEA"), ]
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x < 2.45 & SCRAP.mod.pred$group == "PCOM"), ]
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x < 1.63 & SCRAP.mod.pred$group == "PMAS"), ]
+
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x > 71.02 & SCRAP.mod.pred$group == "MCAP"), ]
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x > 57.55 & SCRAP.mod.pred$group == "MPAT"), ]
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x > 57.55 & SCRAP.mod.pred$group == "PMEA"), ]
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x > 71.02 & SCRAP.mod.pred$group == "PCOM"), ]
+SCRAP.mod.pred <- SCRAP.mod.pred[!(SCRAP.mod.pred$x > 57.55 & SCRAP.mod.pred$group == "PMAS"), ]
+
+#plot
+SCRAP.plot <- ggplot(SCRAP.mod.pred, aes(x = x, y = predicted)) +
+  geom_ribbon(data = SCRAP.mod.pred, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.25) + # add CI
+  geom_line(aes(color = group), size = 0.8, show.legend = TRUE) +# Line plot of predicted values 
+  geom_point(data = SCRAP.dat, aes(x = HC, y = mean_diff, color = CORAL_CODE), size = 2, show.legend = TRUE) +# add data points
+  ylab(y_lab)  +
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  scale_color_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_fill_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_x_continuous(name="Hard Coral Cover", limits=c(0, 80)) 
+
+SCRAP.plot
+```
+
+```{r SCRAP and EXCAV combined test HC x coral_code interaction}
+#SUMMARY:  test HC x coral species interaction for each coral predator and method differences as the response. Using combined scraper and excavator data. Because interaction was not significant, test each predictor independently to see whether either is significant. Coral species significant so tested for pairwise differences in intercepts
+
+#extract and combine scrap and excav data
+SCRAP.EXCAV.dat <- transect_diffs %>%
+  filter(BITE_CATEG %in% c("SCRAP", "EXCAV")) %>%
+  group_by(TRANSECT, CORAL_CODE, HC, depth, depth_bin, site) %>%
+  summarise(mean_diff = sum(mean_diff))
+
+#remove coral with <4 observations
+# table(SCRAP.EXCAV.dat$CORAL_CODE) 
+SCRAP.EXCAV.dat <- subset(SCRAP.EXCAV.dat, CORAL_CODE != "PDUE" &          
+                                           CORAL_CODE != "PDAM" &
+                                           CORAL_CODE != "PGRA" &
+                                           CORAL_CODE != "PLIG")
+# table(SCRAP.dat$CORAL_CODE) 
+
+#build model with and without interaction
+SCRAP.EXCAV.int <- lmer(mean_diff ~ CORAL_CODE * HC + (1|depth_bin) + (1|site), data = SCRAP.EXCAV.dat)
+# summary(SCRAP.int)
+SCRAP.EXCAV.add <- lmer(mean_diff ~ CORAL_CODE + HC + (1|depth_bin) + (1|site), data = SCRAP.EXCAV.dat)
+
+#test the significance of the interaction
+anova(SCRAP.EXCAV.int, SCRAP.EXCAV.add) # interaction not significant so work with additive model
+
+#build models with only one predictor
+SCRAP.EXCAV.HC <- lmer(mean_diff ~ HC + (1|depth_bin) + (1|site), data = SCRAP.EXCAV.dat)
+SCRAP.EXCAV.coral <- lmer(mean_diff ~ CORAL_CODE  + (1|depth_bin) + (1|site), data = SCRAP.EXCAV.dat)
+
+#test predictors
+anova(SCRAP.EXCAV.add, SCRAP.EXCAV.coral) #HC not signif
+anova(SCRAP.EXCAV.add, SCRAP.EXCAV.HC) #coral code not signif
+
+#pairwise comparisons of intercecpt
+em <- emmeans(SCRAP.EXCAV.coral, pairwise ~ CORAL_CODE) #estimated marginal means (intercepts) 
+pairwise <- pairs(em, adjust = "tukey") 
+pairwise
+```
+
+```{r SCRAP and EXCAV combined diagnostincs HC x coral_code interaction}
+#SUMMARY: check model fit
+hist(residuals(SCRAP.EXCAV.int))
+qqPlot(residuals(SCRAP.EXCAV.int))
+hist(residuals(SCRAP.EXCAV.add))
+qqPlot(residuals(SCRAP.EXCAV.add))
+```
+
+```{r FIGURE SCRAP and EXCAV combined coral code x HC interaction}
+# SUMMARY: create prediction curves and confidence intervals for coral species x HCC models for each coral predator and plot with original data
+
+# Generate predictions using ggpredict
+SCRAP.EXCAV.mod.pred <- as.data.frame(ggpredict(SCRAP.EXCAV.int, terms = c("HC [all]", "CORAL_CODE"), interval = "confidence"))
+
+#stuff for the actual plot
+y_lab <- expression(paste("Difference in Number of Bite Marks (per ", m^{2}, ")"))
+colors <-c("#E692B1", "#9D6AC1",  "#7EA2D2", "#86B160", "#CCC13F")
+            #MCAP        MPAT      PMEA.       PCOM.     PMAS
+leg_lab <- c("Montipora capitata", "Montipora patula", 
+             "Pocillopora meandrina",
+             "Porites compressa", "Porites massive")
+
+#figure out min and max HC values
+SCRAP.EXCAV.dat %>% 
+  group_by(CORAL_CODE) %>%
+  summarise(
+    min = min(HC),
+    max = max(HC)
+  )
+
+#remove data for values below/above certain HC
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x < 2.45 & SCRAP.EXCAV.mod.pred$group == "MCAP"), ]
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x < 4.08 & SCRAP.EXCAV.mod.pred$group == "MPAT"), ]
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x < 1.63 & SCRAP.EXCAV.mod.pred$group == "PMEA"), ]
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x < 2.45 & SCRAP.EXCAV.mod.pred$group == "PCOM"), ]
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x < 1.63 & SCRAP.EXCAV.mod.pred$group == "PMAS"), ]
+
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x > 71.02 & SCRAP.EXCAV.mod.pred$group == "MCAP"), ]
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x > 57.55 & SCRAP.EXCAV.mod.pred$group == "MPAT"), ]
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x > 57.55 & SCRAP.EXCAV.mod.pred$group == "PMEA"), ]
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x > 71.02 & SCRAP.EXCAV.mod.pred$group == "PCOM"), ]
+SCRAP.EXCAV.mod.pred <- SCRAP.EXCAV.mod.pred[!(SCRAP.EXCAV.mod.pred$x > 57.55 & SCRAP.EXCAV.mod.pred$group == "PMAS"), ]
+
+#plot
+SCRAP.EXCAV.plot <- ggplot(SCRAP.EXCAV.mod.pred, aes(x = x, y = predicted)) +
+  geom_ribbon(data = SCRAP.EXCAV.mod.pred, aes(x = x, ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.25) + # add CI
+  geom_line(aes(color = group), size = 0.8, show.legend = TRUE) +# Line plot of predicted values 
+  geom_point(data = SCRAP.EXCAV.dat, aes(x = HC, y = mean_diff, color = CORAL_CODE), size = 2, show.legend = TRUE) +# add data points
+  xlab("Hard Coral Cover") +
+  ylab(y_lab)  +
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  ggtitle("Scraper and Excavatpr") +
+  theme(plot.title = element_text(size = 12, face = "bold")) +
+  scale_color_manual("Coral Species", values = colors, labels = leg_lab) +
+  scale_fill_manual("Coral Species", values = colors, labels = leg_lab) 
+
+SCRAP.EXCAV.plot
+```
+
+```{r FIGURE combine figures for all bite mark categories HC x coral spp interaction}
+#SUMMARY: Combine plots together and format
+
+
+#  stuff for plot
+y_lab <- expression(bold(paste("Difference in Number of Bite Marks (per ", m^{2}, ")")))
+x_lab <- expression(bold("Hard Coral Cover"))
+
+combined.plot <- ggarrange(EXBR.plot + rremove("ylab") + rremove("xlab"), 
+          SCSP.plot + rremove("ylab") + rremove("xlab"),
+          EXCAV.plot + rremove("ylab") + rremove("xlab"), 
+          SCRAP.plot + rremove("ylab") + rremove("xlab"),
+          nrow = 2, ncol = 2, align = "hv",
+          common.legend = T, 
+          legend = "right") 
+  # theme(panel.background = element_rect(fill = "#F8F8F3"),
+  #       plot.background=  element_rect(fill = "#F8F8F3"),
+  #       legend.background  = element_rect(fill = "#F8F8F3"),
+  #       legend.key  = element_rect(fill = "#F8F8F3"))
+
+annotate_figure(combined.plot, 
+                left = textGrob(y_lab, rot = 90, vjust = 1, gp = gpar(cex = 1)),
+                bottom = textGrob(x_lab, hjust = 1.2, gp = gpar(cex = 1)))
+
+ggsave("Fig 5_corallivory by HC, category & coral spp_unedited.png", plot = last_plot(), width = 8, height = 6, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
+```
+
+```{r FIGURE Diff # of bite marks by coral spp for EXCAV and SCRAP}
+#SUMMARY: Bar graph with difference in number of bite marks by coral species for each coral predator
+
+#create data frame with summary stats
+EXCAV.SCRAP_coral <- transect_diffs %>%
+  group_by(BITE_CATEG, CORAL_CODE) %>%
+  summarise(
+    mean = mean(mean_diff),
+    sd = sd(mean_diff),
+    n = n(),
+    se = sd(mean_diff)/sqrt(n()),
+  )
+EXCAV.SCRAP_coral <- as.data.frame(EXCAV.SCRAP_coral)
+
+
+#extract data for scrap and excav
+EXCAV.SCRAP_coral <- subset(EXCAV.SCRAP_coral, BITE_CATEG != "EXBR" &
+                                               BITE_CATEG != "SCSP")
+
+# #create data frame with summary stats for EXCAV and SCRAP combined
+# EXCAV.SCRAP_combined <- transect_diffs %>%
+#   filter(BITE_CATEG %in% c("SCRAP", "EXCAV")) %>%
+#   group_by(TRANSECT, CORAL_CODE, HC, depth, depth_bin, site) %>%
+#   summarise(mean_diff = sum(mean_diff))
+# 
+# EXCAV.SCRAP_combined <- EXCAV.SCRAP_combined %>%
+#   group_by(CORAL_CODE) %>%
+#   summarise(
+#     mean = mean(mean_diff),
+#     sd = sd(mean_diff),
+#     n = n(),
+#     se = sd(mean_diff)/sqrt(n()),
+#   )
+# 
+# EXCAV.SCRAP_combined$BITE_CATEG <- "EXCAV.SCRAP"
+# 
+# #organize columns
+# order_cols <- as.vector(colnames(EXCAV.SCRAP_coral))
+# EXCAV.SCRAP_combined <- EXCAV.SCRAP_combined[,order_cols]
+
+
+#combine data
+# EXCAV.SCRAP_coral <- rbind(EXCAV.SCRAP_coral, EXCAV.SCRAP_combined)
+
+#remove coral species
+EXCAV.SCRAP_coral <- subset(EXCAV.SCRAP_coral, CORAL_CODE != "PDUE" &
+                                               CORAL_CODE != "PGRA" &
+                                               CORAL_CODE != "PDAM" &
+                                               CORAL_CODE != "PLIG")
+#stuff for plot
+leg_lab <- c("Montipora capitata", "Montipora patula", 
+             "Pocillopora meandrina", "Porites compressa", 
+             "Porites massive")
+colors <- c("#6ACAC2", "#8BB95D")
+y_lab <- expression(paste("Difference in Number of Bite Marks (per ", m^{2}, ")"))
+x_lab <- expression(bold("Coral Species"))
+
+#plot
+ggplot(data = EXCAV.SCRAP_coral, aes(x = CORAL_CODE, y = mean, fill = BITE_CATEG)) +
+  geom_bar(stat = "identity", color = "black", show.legend = F) +
+  geom_text(aes(label = n, y = 5), position = position_dodge(width = 0.9), vjust = -0.5)+  
+  facet_wrap(~BITE_CATEG, labeller = labeller(BITE_CATEG = c("EXCAV" = "Excavator", "SCRAP" = "Scraper", "EXCAV.SCRAP" = "Excavator and Scraper"))) +
+  geom_errorbar(data = EXCAV.SCRAP_coral, aes( x = CORAL_CODE,
+                                         ymin = mean-se,
+                                         ymax = mean+se),
+                size = 1,
+                width = 0.2, 
+                linetype = 1, 
+                position = "dodge") +
+  labs(x = x_lab, y = y_lab) +
+  scale_fill_manual(values = colors) +
+  theme_few() +
+  theme(panel.border = element_rect(linewidth = 1.5, colour = "black")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_discrete(labels = leg_lab) +
+  ylim(-6, 6) +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black", size = 0.5) 
+   # theme(panel.background = element_rect(fill = "#F8F8F3"),
+   #      plot.background=  element_rect(fill = "#F8F8F3"),
+   #      legend.background  = element_rect(fill = "#F8F8F3"),
+   #      legend.key  = element_rect(fill = "#F8F8F3"))
+
+ggsave("Fig 6_corallivory by HC, category & coral spp_unedited.png", plot = last_plot(), width = 8, height = 6, 
+       path ="C:/Users/escontreladieguezd/OneDrive - Seattle Aquarium/Documents/phd_chapters/CH1_sfm_comparison/data_analysis/corallivory_method_comparison")
 ```
